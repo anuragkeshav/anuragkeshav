@@ -1,4 +1,5 @@
 from pathlib import Path
+from html import escape
 
 import cv2
 import numpy as np
@@ -11,19 +12,20 @@ from rembg import remove
 # ============================================================
 
 COLS = 90
-DISPLAY_WIDTH = 460
+DISPLAY_WIDTH = 700
 
-# Monospace character measurements
-CHAR_W = 7.74
 FONT_SIZE = 12.9
+CHAR_W = 7.74
 
-# Image processing
-CLAHE_CLIP = 3.0
-DARKEN_POWER = 1.7
+# Contrast
+CLAHE_CLIP = 2.4
 
-# ASCII ramp
-# Bright pixels -> light characters
-# Dark pixels   -> dense characters
+# Slightly darker shadows without crushing the face
+GAMMA = 1.25
+
+# ASCII brightness ramp
+# Bright -> space
+# Dark -> dense
 RAMP = " .:-=+*#%@"
 
 INPUT_FILE = Path("input/portrait.jpg")
@@ -31,237 +33,273 @@ OUTPUT_FILE = Path("assets/portrait.svg")
 
 
 # ============================================================
-# 1. LOAD IMAGE
+# LOAD IMAGE
 # ============================================================
 
-print("Loading image...")
+print("Loading portrait...")
 
 if not INPUT_FILE.exists():
     raise FileNotFoundError(
-        f"Input image not found: {INPUT_FILE}"
+        f"Missing image: {INPUT_FILE}"
     )
 
-image = Image.open(INPUT_FILE).convert("RGBA")
+image = Image.open(
+    INPUT_FILE
+).convert("RGBA")
 
-original_width, original_height = image.size
+img_w, img_h = image.size
 
 print(
     f"Original image: "
-    f"{original_width} x {original_height}"
+    f"{img_w} x {img_h}"
 )
 
 
 # ============================================================
-# 2. REMOVE BACKGROUND
+# REMOVE BACKGROUND
 # ============================================================
 
 print("Removing background...")
 
 rgba = np.array(image)
 
-result = remove(rgba)
+removed = remove(rgba)
 
-# RGB + alpha
-rgb = result[:, :, :3]
-alpha = result[:, :, 3]
-
-
-# ============================================================
-# 3. FIND SUBJECT BOUNDING BOX
-# ============================================================
-
-print("Detecting subject...")
-
-ys, xs = np.where(alpha > 20)
-
-if len(xs) == 0 or len(ys) == 0:
-    raise RuntimeError(
-        "No subject detected by rembg."
-    )
-
-x1 = int(xs.min())
-y1 = int(ys.min())
-x2 = int(xs.max()) + 1
-y2 = int(ys.max()) + 1
+rgb = removed[:, :, :3]
+alpha = removed[:, :, 3]
 
 
 # ============================================================
-# 4. ADD PADDING AROUND SUBJECT
+# PORTRAIT CROP
+# ============================================================
+#
+# The uploaded portrait is square.
+#
+# We intentionally crop:
+#
+#   - a little from left/right
+#   - very little from top
+#   - almost all of the shoulders
+#
+# This makes the FACE occupy much more of
+# the ASCII grid.
 # ============================================================
 
-subject_width = x2 - x1
-subject_height = y2 - y1
+left = int(img_w * 0.10)
+right = int(img_w * 0.90)
 
-pad_x = int(subject_width * 0.08)
-pad_y = int(subject_height * 0.08)
+top = int(img_h * 0.02)
+bottom = int(img_h * 0.99)
 
-x1 = max(0, x1 - pad_x)
-y1 = max(0, y1 - pad_y)
+rgb = rgb[
+    top:bottom,
+    left:right
+]
 
-x2 = min(rgb.shape[1], x2 + pad_x)
-y2 = min(rgb.shape[0], y2 + pad_y)
+alpha = alpha[
+    top:bottom,
+    left:right
+]
 
-
-# Crop both image and alpha
-rgb = rgb[y1:y2, x1:x2]
-alpha = alpha[y1:y2, x1:x2]
+crop_h, crop_w = rgb.shape[:2]
 
 print(
-    f"Subject crop: "
-    f"{rgb.shape[1]} x {rgb.shape[0]}"
+    f"Portrait crop: "
+    f"{crop_w} x {crop_h}"
 )
 
 
 # ============================================================
-# 5. COMPOSITE SUBJECT ON WHITE
-# ============================================================
-
-print("Creating white background...")
-
-white = np.full_like(rgb, 255)
-
-alpha_float = alpha.astype(np.float32) / 255.0
-
-composite = (
-    rgb.astype(np.float32)
-    * alpha_float[:, :, None]
-    +
-    white.astype(np.float32)
-    * (1.0 - alpha_float[:, :, None])
-)
-
-composite = np.clip(
-    composite,
-    0,
-    255
-).astype(np.uint8)
-
-
-# ============================================================
-# 6. GRAYSCALE
+# GRAYSCALE
 # ============================================================
 
 gray = cv2.cvtColor(
-    composite,
+    rgb,
     cv2.COLOR_RGB2GRAY
 )
 
 
 # ============================================================
-# 7. CALCULATE ASCII SIZE
+# ASCII SIZE
 # ============================================================
 
-width = gray.shape[1]
-height = gray.shape[0]
-
-# Characters are narrower than they are tall.
-# This compensates for the monospace character shape.
-
-CHAR_ASPECT = CHAR_W / FONT_SIZE
+# The 0.48 correction compensates for the fact
+# that monospace characters are taller than wide.
 
 ROWS = max(
     1,
     int(
         COLS
-        * (height / width)
-        * CHAR_ASPECT
+        * (crop_h / crop_w)
+        * 0.48
+    )
+)
+
+# Keep facial detail in a useful range.
+ROWS = max(
+    52,
+    min(
+        ROWS,
+        62
     )
 )
 
 print(
     f"ASCII grid: "
-    f"{COLS} columns x {ROWS} rows"
+    f"{COLS} x {ROWS}"
 )
 
 
 # ============================================================
-# 8. RESIZE IMAGE TO ASCII GRID
+# RESIZE
 # ============================================================
-
-print("Resizing image...")
 
 gray = cv2.resize(
     gray,
+    (COLS, ROWS),
+    interpolation=cv2.INTER_LANCZOS4
+)
+
+alpha_small = cv2.resize(
+    alpha,
     (COLS, ROWS),
     interpolation=cv2.INTER_AREA
 )
 
 
 # ============================================================
-# 9. BILATERAL FILTER
+# BILATERAL FILTER
 # ============================================================
 
-print("Applying bilateral filter...")
+print("Smoothing while preserving facial edges...")
 
 gray = cv2.bilateralFilter(
     gray,
-    d=5,
-    sigmaColor=50,
-    sigmaSpace=50
+    5,
+    35,
+    35
 )
 
 
 # ============================================================
-# 10. CLAHE
+# CLAHE
 # ============================================================
 
-print("Applying CLAHE...")
+print("Enhancing local facial contrast...")
 
 clahe = cv2.createCLAHE(
     clipLimit=CLAHE_CLIP,
-    tileGridSize=(8, 8)
+    tileGridSize=(6, 6)
 )
 
 gray = clahe.apply(gray)
 
 
 # ============================================================
-# 11. DARKENING CURVE
+# UNSHARP MASK
+# ============================================================
+#
+# Helps preserve:
+#   eyes
+#   eyebrows
+#   nose edge
+#   lips
+#   jaw
+#
 # ============================================================
 
-print("Applying darkening curve...")
-
-normalized = (
-    gray.astype(np.float32) / 255.0
+blur = cv2.GaussianBlur(
+    gray,
+    (0, 0),
+    1.2
 )
 
-normalized = np.power(
-    normalized,
-    DARKEN_POWER
+gray = cv2.addWeighted(
+    gray,
+    1.35,
+    blur,
+    -0.35,
+    0
 )
 
 gray = np.clip(
-    normalized * 255.0,
+    gray,
     0,
     255
 ).astype(np.uint8)
 
 
 # ============================================================
-# 12. CONVERT IMAGE TO ASCII
+# GAMMA / SHADOW CONTROL
 # ============================================================
 
-print("Converting to ASCII...")
+print("Balancing shadows and skin tones...")
+
+v = (
+    gray.astype(np.float32)
+    / 255.0
+)
+
+v = np.power(
+    v,
+    GAMMA
+)
+
+gray = np.clip(
+    v * 255.0,
+    0,
+    255
+).astype(np.uint8)
+
+
+# ============================================================
+# BACKGROUND MASK
+# ============================================================
+#
+# Everything outside the person becomes empty.
+#
+# This is what allows GitHub's dark background
+# to show through.
+# ============================================================
+
+background = alpha_small < 35
+
+gray[background] = 255
+
+
+# ============================================================
+# ASCII CONVERSION
+# ============================================================
+
+print("Converting portrait to ASCII...")
 
 ascii_rows = []
 
 for y in range(ROWS):
 
-    row_chars = []
+    row = []
 
     for x in range(COLS):
+
+        # Transparent background
+        if alpha_small[y, x] < 35:
+            row.append(" ")
+            continue
 
         brightness = int(
             gray[y, x]
         )
 
-        # Reverse brightness:
-        # bright -> beginning of RAMP
-        # dark   -> end of RAMP
+        # Convert brightness to ASCII index.
+        #
+        # 255 = bright = space
+        # 0   = dark  = @
 
         index = int(
-            (255 - brightness)
-            / 255.0
+            (
+                (255 - brightness)
+                / 255.0
+            )
             * (len(RAMP) - 1)
         )
 
@@ -273,28 +311,137 @@ for y in range(ROWS):
             )
         )
 
-        row_chars.append(
+        row.append(
             RAMP[index]
         )
 
     ascii_rows.append(
-        "".join(row_chars)
+        "".join(row)
     )
 
 
 # ============================================================
-# 13. CREATE SVG DIMENSIONS
+# REMOVE COMPLETELY EMPTY ROWS
 # ============================================================
 
-print("Creating SVG...")
+def has_content(row):
+    return any(
+        c != " "
+        for c in row
+    )
 
-svg_width = COLS * CHAR_W
-svg_height = ROWS * FONT_SIZE * 1.05
+
+while (
+    ascii_rows
+    and not has_content(
+        ascii_rows[0]
+    )
+):
+    ascii_rows.pop(0)
+
+
+while (
+    ascii_rows
+    and not has_content(
+        ascii_rows[-1]
+    )
+):
+    ascii_rows.pop()
 
 
 # ============================================================
-# 14. START SVG
+# FIND CONTENT BOUNDS
 # ============================================================
+
+if not ascii_rows:
+    raise RuntimeError(
+        "ASCII conversion produced no visible content."
+    )
+
+
+min_x = len(ascii_rows[0])
+max_x = 0
+
+for row in ascii_rows:
+
+    for x, char in enumerate(row):
+
+        if char != " ":
+
+            min_x = min(
+                min_x,
+                x
+            )
+
+            max_x = max(
+                max_x,
+                x
+            )
+
+
+# ============================================================
+# CROP EMPTY HORIZONTAL SPACE
+# ============================================================
+
+padding = 2
+
+min_x = max(
+    0,
+    min_x - padding
+)
+
+max_x = min(
+    COLS - 1,
+    max_x + padding
+)
+
+ascii_rows = [
+    row[min_x:max_x + 1]
+    for row in ascii_rows
+]
+
+
+# ============================================================
+# FINAL DIMENSIONS
+# ============================================================
+
+FINAL_COLS = max(
+    len(row)
+    for row in ascii_rows
+)
+
+FINAL_ROWS = len(
+    ascii_rows
+)
+
+CONTENT_WIDTH = (
+    FINAL_COLS * CHAR_W
+)
+
+# Space around portrait
+SIDE_PADDING = 80
+
+SVG_WIDTH = (
+    CONTENT_WIDTH
+    + SIDE_PADDING * 2
+)
+
+SVG_HEIGHT = (
+    FINAL_ROWS
+    * FONT_SIZE
+    * 1.05
+)
+
+CENTER_X = (
+    SVG_WIDTH / 2
+)
+
+
+# ============================================================
+# CREATE SVG
+# ============================================================
+
+print("Creating centered SVG...")
 
 svg = []
 
@@ -306,40 +453,41 @@ svg.append(
     f'<svg '
     f'xmlns="http://www.w3.org/2000/svg" '
     f'width="{DISPLAY_WIDTH}" '
-    f'viewBox="0 0 {svg_width:.2f} {svg_height:.2f}" '
-    f'preserveAspectRatio="xMidYMid meet" '
-    f'role="img">'
+    f'viewBox="0 0 '
+    f'{SVG_WIDTH:.2f} '
+    f'{SVG_HEIGHT:.2f}" '
+    f'preserveAspectRatio="xMidYMid meet">'
 )
 
 
 # ============================================================
-# 15. WHITE BACKGROUND
-# ============================================================
-
-svg.append(
-    '<rect '
-    'x="0" '
-    'y="0" '
-    'width="100%" '
-    'height="100%" '
-    'fill="white"/>'
-)
-
-
-# ============================================================
-# 16. SVG DEFINITIONS
+# CLIP PATHS
 # ============================================================
 
 svg.append("<defs>")
 
+for i, row in enumerate(ascii_rows):
 
-for i in range(ROWS):
+    row_width = (
+        len(row) * CHAR_W
+    )
 
-    clip_id = f"rowClip{i}"
+    row_left = (
+        CENTER_X
+        - row_width / 2
+    )
 
-    y = i * FONT_SIZE
+    y = (
+        i * FONT_SIZE
+    )
 
-    delay = i * 0.09
+    delay = (
+        i * 0.09
+    )
+
+    clip_id = (
+        f"row{i}"
+    )
 
     svg.append(
         f'<clipPath id="{clip_id}">'
@@ -347,18 +495,18 @@ for i in range(ROWS):
 
     svg.append(
         f'<rect '
-        f'x="0" '
+        f'x="{row_left:.2f}" '
         f'y="{y:.2f}" '
         f'width="0" '
-        f'height="{FONT_SIZE * 1.3:.2f}">'
+        f'height="{FONT_SIZE * 1.4:.2f}">'
     )
 
     svg.append(
         f'<animate '
         f'attributeName="width" '
         f'from="0" '
-        f'to="{svg_width:.2f}" '
-        f'dur="0.8s" '
+        f'to="{row_width:.2f}" '
+        f'dur="0.75s" '
         f'begin="{delay:.2f}s" '
         f'fill="freeze"/>'
     )
@@ -371,54 +519,53 @@ for i in range(ROWS):
         '</clipPath>'
     )
 
-
 svg.append("</defs>")
 
 
 # ============================================================
-# 17. ASCII TEXT GROUP
+# TEXT GROUP
 # ============================================================
 
 svg.append(
     '<g '
-    'font-family="DejaVu Sans Mono, Liberation Mono, monospace" '
+    'font-family="DejaVu Sans Mono, '
+    'Liberation Mono, monospace" '
     f'font-size="{FONT_SIZE}px" '
     'font-weight="400" '
-    'fill="black" '
+    'fill="#E6EDF3" '
+    'text-anchor="middle" '
     'xml:space="preserve">'
 )
 
 
 # ============================================================
-# 18. ADD ASCII ROWS
+# DRAW EVERY ROW
 # ============================================================
 
 for i, row in enumerate(ascii_rows):
 
-    y = (i + 1) * FONT_SIZE
+    y = (
+        (i + 1)
+        * FONT_SIZE
+    )
 
-    clip_id = f"rowClip{i}"
-
-    # Escape XML-sensitive characters
-    row = (
-        row
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+    safe_row = escape(
+        row,
+        quote=False
     )
 
     svg.append(
         f'<text '
-        f'x="0" '
+        f'x="{CENTER_X:.2f}" '
         f'y="{y:.2f}" '
-        f'clip-path="url(#{clip_id})">'
-        f'{row}'
+        f'clip-path="url(#row{i})">'
+        f'{safe_row}'
         f'</text>'
     )
 
 
 # ============================================================
-# 19. CLOSE SVG
+# CLOSE SVG
 # ============================================================
 
 svg.append("</g>")
@@ -426,7 +573,7 @@ svg.append("</svg>")
 
 
 # ============================================================
-# 20. SAVE SVG
+# SAVE
 # ============================================================
 
 OUTPUT_FILE.parent.mkdir(
@@ -441,28 +588,66 @@ OUTPUT_FILE.write_text(
 
 
 # ============================================================
-# 21. DONE
+# DONE
 # ============================================================
 
 print()
-print("==============================================")
-print("       PORTRAIT GENERATED SUCCESSFULLY")
-print("==============================================")
-print(f"Input:          {INPUT_FILE}")
-print(f"Output:         {OUTPUT_FILE}")
 print(
-    f"Original size:  "
-    f"{original_width} x {original_height}"
+    "=============================================="
 )
+
 print(
-    f"Subject crop:   "
-    f"{width} x {height}"
+    "       FACE-FOCUSED ASCII PORTRAIT"
 )
-print(f"ASCII columns:  {COLS}")
-print(f"ASCII rows:     {ROWS}")
+
 print(
-    f"Display width:  "
-    f"{DISPLAY_WIDTH}px"
+    "=============================================="
 )
-print("Animation:      One-time typing")
-print("==============================================")
+
+print(
+    f"Input:       {INPUT_FILE}"
+)
+
+print(
+    f"Original:    {img_w} x {img_h}"
+)
+
+print(
+    f"Crop:        {crop_w} x {crop_h}"
+)
+
+print(
+    f"ASCII:       {FINAL_COLS} x {FINAL_ROWS}"
+)
+
+print(
+    f"SVG width:   {SVG_WIDTH:.1f}"
+)
+
+print(
+    f"Display:     {DISPLAY_WIDTH}px"
+)
+
+print(
+    "Background:  TRANSPARENT"
+)
+
+print(
+    "Text:        GitHub dark compatible"
+)
+
+print(
+    "Centered:    YES"
+)
+
+print(
+    "Animation:   ONE-TIME"
+)
+
+print(
+    f"Output:      {OUTPUT_FILE}"
+)
+
+print(
+    "=============================================="
+)
