@@ -23,21 +23,6 @@ My personal portfolio built with Vite, TypeScript, React, shadcn/ui and Tailwind
 [**ai-grow-lab**](https://github.com/anuragkeshav/ai-grow-lab) · html, python  
 AI Grow Lab website with a Python backend, lead capture, SQLite storage, email notifications and Google Sheets integration.
 
-[**anuragkeshav**](https://github.com/anuragkeshav/anuragkeshav) · python, svg  
-This profile itself is a project — an ASCII portrait generated from a photo and rendered as an animated SVG directly from my own repository.
-
----
-
-<p align="center">
-  <img src="./assets/portrait.svg" width="700" alt="ASCII portrait">
-</p>
-
----
-
-Every graphic here is generated inside my own repository rather than loaded from a third-party stats service.
-
-The portrait is produced by a Python image-processing pipeline and rendered as SVG, so the GitHub profile can control the asset and its animation directly.
-
 <p align="center">
   <a href="https://github.com/anuragkeshav">github</a> ·
   <a href="https://www.instagram.com/anuragkeshav_/">instagram</a> ·
