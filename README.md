@@ -1,4 +1,12 @@
 <p align="center">
+  <img
+    src="./assets/faulty-terminal.gif"
+    width="100%"
+    alt="ANURAG KESHAV Faulty Terminal"
+  />
+</p>
+
+<p align="center">
   <a href="https://www.instagram.com/anuragkeshav_/">instagram</a> ·
   <a href="https://www.linkedin.com/in/anurag-keshav/">linkedin</a> ·
   <a href="mailto:anuragkeshav23@gmail.com">email</a>
