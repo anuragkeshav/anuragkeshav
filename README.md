@@ -3,26 +3,11 @@
     <img
       src="./assets/faulty-terminal.gif"
       width="100%"
-      alt="ANURAG KESHAV — Click to enter interactive terminal"
-    />
-  </a>
-</p>
-
-  <img
-    src="./assets/faulty-terminal.gif"
-    width="100%"
-    alt="ANURAG KESHAV Faulty Terminal"
-  />
-</p>
-<p align="center">
-  <a href="https://anuragkeshav.github.io/anuragkeshav/">
-    <img
-      src="./assets/faulty-terminal-preview.png"
-      width="100%"
       alt="ANURAG KESHAV Faulty Terminal"
     />
   </a>
 </p>
+
 > Engineering student, developer, and AI enthusiast from India.
 >
 > I build web experiences, experiment with AI, and turn ideas into working projects.
