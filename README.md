@@ -1,9 +1,11 @@
 <p align="center">
-  <img
-    src="./assets/faulty-terminal.gif"
-    width="100%"
-    alt="ANURAG KESHAV Faulty Terminal"
-  />
+  <a href="https://anuragkeshav.github.io/anuragkeshav/">
+    <img
+      src="./assets/faulty-terminal.gif"
+      width="100%"
+      alt="ANURAG KESHAV Faulty Terminal"
+    />
+  </a>
 </p>
 
 <p align="center">
