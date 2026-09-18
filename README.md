@@ -3,7 +3,7 @@
     <img
       src="./assets/faulty-terminal.gif"
       width="100%"
-      alt="ANURAG KESHAV Faulty Terminal"
+      alt="ANURAG KESHAV — Click to enter interactive terminal"
     />
   </a>
 </p>
