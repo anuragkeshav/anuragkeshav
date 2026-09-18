@@ -21,8 +21,6 @@ I’m currently exploring **web development, AI, IoT, and developer tools** — 
 [**Porsche-Themed-Website**](https://github.com/anuragkeshav/Porsche-Themed-Website) · html, css  
 A modern responsive Porsche-inspired website with a video background.
 
-[**Anurag-Keshav-Portfolio**](https://github.com/anuragkeshav/Anurag-Keshav-Portfolio) · typescript, react, vite, tailwind  
-My personal portfolio built with Vite, TypeScript, React, shadcn/ui and Tailwind CSS.
 
 [**ai-grow-lab**](https://github.com/anuragkeshav/ai-grow-lab) · html, python  
 AI Grow Lab website with a Python backend, lead capture, SQLite storage, email notifications and Google Sheets integration.
